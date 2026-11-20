@@ -1,0 +1,257 @@
+---
+title: "Analysis on data from Dr Akin (Data A)"
+author: "Olaoluwa David Odeyemi"
+date: "2026-11-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(psych)
+library(knitr)
+
+# ---- Load cleaned data (produced by 01_clean.R) ----
+if (!file.exists("Data_A_clean.rds"))
+  stop("Run 01_clean.R first to produce Data_A_clean.rds")
+Data_A <- readRDS("Data_A_clean.rds")
+
+# ---- Raw-state constants (from the audit, pre-cleaning) ----
+n_raw      <- 199
+n_raw_cols <- 40
+
+# ---- Helper functions ----
+fmt <- function(x, digits = 1) {
+  if (length(x) == 0 || is.na(x)) return("—")
+  formatC(x, format = "f", digits = digits, big.mark = ",")
+}
+
+num_table <- function(df, vars, labels) {
+  do.call(rbind, lapply(names(vars), function(v) {
+    x <- df[[v]]
+    data.frame(
+      Variable = labels[[v]],
+      n        = sum(!is.na(x)),
+      Missing  = sum(is.na(x)),
+      Mean     = fmt(mean(x,   na.rm = TRUE)),
+      SD       = fmt(sd(x,     na.rm = TRUE)),
+      Median   = fmt(median(x, na.rm = TRUE), 0),
+      Min      = fmt(min(x,    na.rm = TRUE), 0),
+      Max      = fmt(max(x,    na.rm = TRUE), 0),
+      check.names = FALSE
+    )
+  }))
+}
+
+# ---- Defensive check: recoded columns exist ----
+required <- c("marital_clean","education_clean","disease_clean","regimen_clean",
+              "condom_clean","alcohol_clean","smoking_clean","transport_clean",
+              "sport_clean","art_start_year")
+missing_cols <- setdiff(required, names(Data_A))
+if (length(missing_cols) > 0)
+  stop("Missing recoded columns: ", paste(missing_cols, collapse = ", "),
+       ". Re-run 01_clean.R.")
+```
+
+# Data cleaning and preparation
+
+The raw dataset contained `r n_raw` records and `r n_raw_cols` variables, all initially stored as character strings. The following changes were made before analysis. The full cleaning code is in `Data_A_clean.R`; this section describes *what* was done.
+
+## 1. Column name normalisation
+
+Original Excel headers contained spaces and inconsistent capitalisation (e.g. `No. of sexual partners`, `no of H/H members`). These were standardised to snake_case using `janitor::clean_names()`.
+
+## 2. Missing-value codes harmonised
+
+The string codes `"no record"`, `"n/a"`, `"n.a"`, `"m/a"`, `"NA"`, and `"n/n"` were converted to `NA`. Character fields were trimmed and lowercased.
+
+## 3. Numeric variables extracted from text
+
+Several numeric variables were stored as descriptive text and were parsed:
+
+- `age` — plain numeric years.
+- `no_of_h_h_members` — e.g. `"4 H.H members"`.
+- `no_of_sexual_partners` — spelled-out numbers (`"one"`, `"two"`) converted.
+- `children_ever_born` — `"nil"`/`"none"` → 0; `"no record"`/`"unspecified"` → missing.
+- `viral_load_level_on_initiation` / `viral_load_on_reincoportation` — e.g. `"120 copies of vl"` → 120 copies/mL.
+- `cd4_vount_level` / `cd4_on_reincorporation` — cells/µL.
+
+## 4. Date parsing and year of ART initiation
+
+Values in `length_of_time_on_art` were **ART start dates written as text** (e.g. `"since 4 march 21"`), not durations. These were parsed to dates after correcting five month-name typos (`une`→June, `junly`/`julu`→July, `sug`→August, `ay`→May). Twelve records marked `"never been on art"` were assigned a missing start date.
+
+Because the data-collection date was not recorded in the dataset, time on ART could **not** be computed. **Year of ART initiation** is reported instead.
+
+## 5. Excel date serials in duration fields
+
+Five records in `period_on_tb_treatment` and one in `length_of_time_on_art` contained 5-digit values (44,000–45,000) consistent with Excel date serials, not durations; these were set to missing. Records marked `"never been on isoniazid"` were coded as 0 months of TB treatment.
+
+## 6. Categorical harmonisation
+
+Typos and casing variants were collapsed:
+
+- **Yes/no fields** — `"ye"`, `"Yees"` → yes; `"no."`, `"not …"` → no.
+- **Educational level** — `"primary sch."`, `"primary scholling"` → primary.
+- **Disease status** — `"HI"`, `"HV"` → HIV; `"Both HIV & TB"` → HIV & TB.
+- **Regimen** — `"ARRT"`, `"art"` → ART; `"Both ART & TB treatment"` → ART & TB.
+- **Condom use** — `"ye, condom use"`, `"yes, use condoms"` → yes.
+- **Transport** — `"biycle"`, `"bycle"` → bicycle; `"no mention"`/`"unspecified"` → missing.
+- **Marital status** — `"ma"` → married.
+
+## 7. Variables excluded
+
+`residential_area` was dropped: all `r n_raw` records were rural, so the variable has no variance. No duplicate rows were found.
+
+## 8. Missing data
+
+Missing values were **not imputed**. Two kinds of missingness are distinguished in the tables:
+
+- **Data missingness** — information that should have been recorded but was not. For example, children ever born is missing for `r sum(is.na(Data_A$children_num))` records (`r round(mean(is.na(Data_A$children_num)) * 100)`%).
+- **Structural missingness** — information that does not exist for certain patients. For example, LTFU period and re-incorporation VL/CD4 apply only to patients who were ever LTFU and returned.
+
+# Results
+
+## Numeric variables
+
+```{r numeric-table}
+num_vars <- list(
+  age_num             = "Age (years)",
+  hh_members_num      = "Household members (n)",
+  sexual_partners_num = "Sexual partners (n)",
+  children_num        = "Children ever born (n)",
+  time_on_tb_tx_num   = "TB treatment duration (months)",
+  ltfu_period_num     = "LTFU period (months)",
+  vl_initiation_num   = "Viral load at ART initiation (copies/mL)",
+  cd4_initiation_num  = "CD4 at ART initiation (cells/µL)",
+  vl_reincorp_num     = "Viral load at re-incorporation (copies/mL)",
+  cd4_reincorp_num    = "CD4 at re-incorporation (cells/µL)"
+)
+
+kable(num_table(Data_A, num_vars, num_vars),
+      caption = "Table 1. Summary of numeric variables.",
+      align = c("l","r","r","r","r","r","r","r"))
+```
+
+## Year of ART initiation
+
+```{r year-table}
+yr <- Data_A %>%
+  filter(!is.na(art_start_year)) %>%
+  count(art_start_year, name = "n") %>%
+  mutate(`%` = sprintf("%.1f%%", n / sum(n) * 100)) %>%
+  rename(Year = art_start_year)
+
+kable(yr,
+      caption = paste0("Table 2. Year of ART initiation (n = ",
+                       sum(yr$n), ")."),
+      align = c("l","r","r"))
+```
+
+## Categorical variables
+
+```{r cat-tables, results='asis'}
+cat_vars <- c(
+  gender                        = "Gender",
+  marital_clean                 = "Marital status",
+  education_clean               = "Educational level",
+  employment_status             = "Employment status",
+  disease_clean                 = "Disease status",
+  regimen_clean                 = "Regimen type",
+  condom_clean                  = "Condom use",
+  alcohol_clean                 = "Alcohol consumption",
+  smoking_clean                 = "Smoking habit",
+  transport_clean               = "Mode of transport to health facility",
+  sport_clean                   = "Participation in sport",
+  type_of_religion              = "Religion",
+  distance_from_health_facility = "Distance from health facility"
+)
+
+for (v in names(cat_vars)) {
+  x <- Data_A[[v]]
+  t <- table(x, useNA = "ifany")
+  df <- data.frame(
+    Category = names(t),
+    n        = as.integer(t),
+    `%`      = sprintf("%.1f%%", as.integer(t) / sum(t) * 100),
+    check.names = FALSE
+  )
+  cat("\n\n**", cat_vars[[v]], "**\n\n", sep = "")
+  print(kable(df, row.names = FALSE, align = c("l","r","r")))
+  cat("\n")
+}
+```
+
+# Notes on interpretation
+
+- **Viral load units.** Viral load is reported in copies/mL as recorded in the source data. The median VL at ART initiation (`r fmt(median(Data_A$vl_initiation_num, na.rm = TRUE), 0)` copies/mL) is unusually low for a treatment-naive cohort and should be verified against the source data.
+- **Structural missingness.** LTFU period and re-incorporation VL/CD4 have high missingness (`r sum(is.na(Data_A$ltfu_period_num))`, `r sum(is.na(Data_A$vl_reincorp_num))`, and `r sum(is.na(Data_A$cd4_reincorp_num))` records missing, respectively) because these variables are only applicable to the subset of patients who were LTFU and returned to care. These rates should not be interpreted as data-quality failures.
+- **Children ever born.** Missing for `r sum(is.na(Data_A$children_num))` of `r nrow(Data_A)` records (`r round(mean(is.na(Data_A$children_num)) * 100)`%). Summary statistics are therefore computed on n = `r sum(!is.na(Data_A$children_num))`.
+- **Time on ART** could not be computed because the data-collection date was not recorded; year of ART initiation is reported instead (Table 2).
+
+# Appendix: cleaning code
+
+The full cleaning pipeline is in `Data_A_clean.R`. The chunk below is shown for reference but not executed — rerun `01_clean.R` to regenerate `Data_A_clean.rds`.
+
+```{r appendix-cleaning, echo=TRUE, eval=FALSE}
+# See 01_clean.R for the complete pipeline. Key steps:
+# 1. janitor::clean_names()
+# 2. NA-code harmonisation across character columns
+# 3. parse_number() extraction for numeric-from-text columns
+# 4. parse_since() date parser for length_of_time_on_art
+# 5. Serial-date removal (>1000 -> NA) for duration columns
+# 6. yn() + case_when() recodes for categorical variables
+# 7. Drop residential_area (constant)
+saveRDS(Data_A, "Data_A_clean.rds")
+```
+
+# Logistic Regression: Predictors of LTFU
+
+To identify independent predictors of LTFU, a multivariable logistic regression model was fitted.
+
+```{r regression-table}
+library(broom)
+library(pROC)
+library(ResourceSelection)
+
+# 1. Recreate the outcome variable
+Data_A <- Data_A %>%
+  mutate(ltfu = case_when(
+    ever_ltfu_clean == "yes" ~ 1,
+    ever_ltfu_clean == "no"  ~ 0,
+    TRUE ~ NA_real_
+  ))
+
+# 2. Fit the model
+form_clean <- ltfu ~ gender + alcohol_clean + smoking_clean + 
+                      hh_members_num + art_start_year
+multi_clean <- glm(form_clean, data = Data_A, family = binomial)
+
+# 3. Print the table (with publication-ready row names)
+tidy(multi_clean, exponentiate = TRUE, conf.int = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    Predictor = case_when(
+      term == "gendermale" ~ "Male gender",
+      term == "alcohol_cleanyes" ~ "Alcohol consumption",
+      term == "smoking_cleanyes" ~ "Smoking",
+      term == "hh_members_num" ~ "Household members",
+      term == "art_start_year" ~ "Year of ART initiation"
+    ),
+    OR = sprintf("%.2f", estimate),
+    CI = sprintf("%.2f - %.2f", conf.low, conf.high),
+    p  = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value))
+  ) %>%
+  select(Predictor, OR, CI, p) %>%
+  knitr::kable(caption = "Adjusted Odds Ratios for Loss to Follow-Up")
+
+# 4. Calculate metrics for the text below
+auc_val <- round(as.numeric(pROC::auc(pROC::roc(multi_clean$y, multi_clean$fitted.values, quiet = TRUE))), 3)
+hl_p    <- round(ResourceSelection::hoslem.test(multi_clean$y, multi_clean$fitted.values, g = 10)$p.value, 3)
+```
+
+**Model fit:** The model demonstrated acceptable discrimination (AUC = `r auc_val`) and good calibration (Hosmer-Lemeshow p = `r hl_p`).
+
+#
