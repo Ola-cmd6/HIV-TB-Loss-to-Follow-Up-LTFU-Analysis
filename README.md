@@ -13,8 +13,8 @@ This repository contains the R code for cleaning, descriptive analysis, and mult
 - [Data_A_clean.R](Data_A_clean.R): The cleaning script for Data A.
 - [Data_B_clean.R](Data_B_clean.R): The cleaning script for Data B.
 - [Data_A_report.Rmd](Data_A_report.Rmd) & [Data_B_report.Rmd](Data_B_report.Rmd): The R Markdown source codes.
-- [👉 Click here to view the live Data A HTML report!](https://YOUR-USERNAME.github.io/YOUR-REPO-NAME/Data_A_report.html)
-- [👉 Click here to view the live Data B HTML report!](https://YOUR-USERNAME.github.io/YOUR-REPO-NAME/Data_B_report.html)
+- [👉 Click here to view the live Data A HTML report!](https://ola-cmd6.github.io/HIV-TB-Loss-to-Follow-Up-LTFU-Analysis/Data_A_report.html)
+- [👉 Click here to view the live Data B HTML report!](https://ola-cmd6.github.io/HIV-TB-Loss-to-Follow-Up-LTFU-Analysis/Data_B_report.html)
 
 ## 🔒 Data Availability
 Due to patient confidentiality and data privacy regulations, the raw `.xlsx` files and cleaned `.rds` files are **not** included in this repository.
